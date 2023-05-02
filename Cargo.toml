@@ -1,0 +1,13 @@
+[package]
+name = "utxorpc"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+utxorpc-spec-cardano = { version = "1.0.0-alpha.0", git = "https://github.com/utxorpc/spec.git" }
+utxorpc-spec-build = { version = "1.0.0-alpha.0", git = "https://github.com/utxorpc/spec.git" }
+utxorpc-spec-sync = { version = "1.0.0-alpha.0", git = "https://github.com/utxorpc/spec.git" }
+utxorpc-spec-submit = { version = "1.0.0-alpha.0", git = "https://github.com/utxorpc/spec.git" }
+utxorpc-spec-watch = { version = "1.0.0-alpha.0", git = "https://github.com/utxorpc/spec.git" }
