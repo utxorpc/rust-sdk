@@ -1,2 +1,3 @@
-# rust-sdk
+# UTxO RPC - Rust SDK
+
 Rust SDK for the UTxO RPC interface
