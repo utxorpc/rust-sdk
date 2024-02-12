@@ -1,6 +1,6 @@
 pub mod proto {
     pub mod cardano {
-        pub use utxorpc_spec_cardano::utxorpc::cardano::v1;
+        pub use utxorpc_spec::utxorpc::v1alpha::cardano;
     }
 
     // pub mod build {
@@ -8,7 +8,7 @@ pub mod proto {
     // }
 
     pub mod sync {
-        pub use utxorpc_spec_sync::utxorpc::sync::v1;
+        pub use utxorpc_spec::utxorpc::v1alpha::sync;
     }
 
     // pub mod submit {
