@@ -11,8 +11,10 @@ readme = "README.md"
 authors = ["Santiago Carmuega <santiago@carmuega.me>"]
 
 [dependencies]
-utxorpc-spec-cardano = { version = "1.0.0-alpha.1", git = "https://github.com/utxorpc/spec.git" }
-# utxorpc-spec-build = { version = "1.0.0-alpha.0", git = "https://github.com/utxorpc/spec.git" }
-utxorpc-spec-sync = { version = "1.0.0-alpha.1", git = "https://github.com/utxorpc/spec.git" }
-# utxorpc-spec-submit = { version = "1.0.0-alpha.0", git = "https://github.com/utxorpc/spec.git" }
-# utxorpc-spec-watch = { version = "1.0.0-alpha.0", git = "https://github.com/utxorpc/spec.git" }
+thiserror = "1.0.57"
+tokio = "1.35.1"
+tonic = { version = "^0.9", features = ["tls-roots"] }
+utxorpc-spec = { version = "0.3.0" }
+
+[dev-dependencies]
+tokio = { version = "1.35.1", features = ["full"] }
