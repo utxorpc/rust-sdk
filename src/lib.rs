@@ -13,7 +13,7 @@ use tonic::{
 };
 
 pub use utxorpc_spec::utxorpc::v1alpha as spec;
-use utxorpc_spec::utxorpc::v1alpha::sync::{BlockRef, DumpHistoryResponse};
+use utxorpc_spec::utxorpc::v1alpha::sync::DumpHistoryResponse;
 
 #[derive(Error, Debug)]
 pub enum Error {
