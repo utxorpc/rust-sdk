@@ -13,7 +13,7 @@ use tonic::{
 };
 
 pub use utxorpc_spec::utxorpc::v1alpha as spec;
-use utxorpc_spec::utxorpc::v1alpha::sync::{BlockRef, DumpHistoryResponse};
+use utxorpc_spec::utxorpc::v1alpha::sync::DumpHistoryResponse;
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -192,13 +192,17 @@ impl<C: Chain> From<DumpHistoryResponse> for HistoryPage<C> {
 }
 
 pub struct SyncClient<C: Chain> {
-    inner: spec::sync::chain_sync_service_client::ChainSyncServiceClient<InnerService>,
+    inner: spec::sync::sync_service_client::SyncServiceClient<InnerService>,
     _phantom: PhantomData<C>,
 }
 
 impl<C: Chain> SyncClient<C> {
     pub async fn follow_tip(&mut self, intersect: Vec<spec::sync::BlockRef>) -> Result<LiveTip<C>> {
-        let req = spec::sync::FollowTipRequest { intersect };
+        let req = spec::sync::FollowTipRequest {
+            intersect,
+            field_mask: None,
+        };
+
         let stream = self.inner.follow_tip(req).await?;
 
         Ok(LiveTip(stream.into_inner(), PhantomData::default()))
@@ -221,7 +225,7 @@ impl<C: Chain> SyncClient<C> {
 }
 
 impl<C: Chain> Deref for SyncClient<C> {
-    type Target = spec::sync::chain_sync_service_client::ChainSyncServiceClient<InnerService>;
+    type Target = spec::sync::sync_service_client::SyncServiceClient<InnerService>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
@@ -237,7 +241,7 @@ impl<C: Chain> DerefMut for SyncClient<C> {
 impl<C: Chain> From<InnerService> for SyncClient<C> {
     fn from(value: InnerService) -> Self {
         Self {
-            inner: spec::sync::chain_sync_service_client::ChainSyncServiceClient::new(value),
+            inner: spec::sync::sync_service_client::SyncServiceClient::new(value),
             _phantom: Default::default(),
         }
     }
