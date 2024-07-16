@@ -14,7 +14,7 @@ authors = ["Santiago Carmuega <santiago@carmuega.me>"]
 thiserror = "1.0.57"
 tokio = "1.35.1"
 tonic = { version = "^0.11", features = ["tls-roots"] }
-utxorpc-spec = { version = "0.6.0" }
+utxorpc-spec = { version = "0.7.0" }
 # utxorpc-spec = { path = "../spec/gen/rust" }
 
 [dev-dependencies]
