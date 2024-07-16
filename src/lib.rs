@@ -120,7 +120,6 @@ impl Chain for Cardano {
     fn block_from_any_chain(x: spec::sync::AnyChainBlock) -> Option<Self::Block> {
         match x.chain? {
             spec::sync::any_chain_block::Chain::Cardano(x) => Some(x),
-            _ => None,
         }
     }
 }
