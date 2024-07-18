@@ -1,7 +1,7 @@
 use std::{
     marker::PhantomData,
     ops::{Deref, DerefMut},
-    str::FromStr,
+    str::{Bytes, FromStr},
 };
 
 use thiserror::Error;
@@ -104,22 +104,33 @@ impl ClientBuilder {
     }
 }
 
+pub type NativeBytes = ::bytes::Bytes;
+
 pub trait Chain {
-    type Block;
+    type ParsedBlock;
     type Intersect;
 
-    fn block_from_any_chain(x: spec::sync::AnyChainBlock) -> Option<Self::Block>;
+    fn block_from_any_chain(x: spec::sync::AnyChainBlock) -> ChainBlock<Self::ParsedBlock>;
+}
+
+pub struct ChainBlock<B> {
+    pub parsed: Option<B>,
+    pub native: NativeBytes,
 }
 
 pub struct Cardano;
 
 impl Chain for Cardano {
-    type Block = spec::cardano::Block;
+    type ParsedBlock = spec::cardano::Block;
     type Intersect = Vec<spec::sync::BlockRef>;
 
-    fn block_from_any_chain(x: spec::sync::AnyChainBlock) -> Option<Self::Block> {
-        match x.chain? {
-            spec::sync::any_chain_block::Chain::Cardano(x) => Some(x),
+    fn block_from_any_chain(x: spec::sync::AnyChainBlock) -> ChainBlock<Self::ParsedBlock> {
+        ChainBlock {
+            parsed: match x.chain {
+                Some(spec::sync::any_chain_block::Chain::Cardano(x)) => Some(x),
+                _ => None,
+            },
+            native: x.native_bytes,
         }
     }
 }
@@ -128,8 +139,8 @@ pub enum TipEvent<C>
 where
     C: Chain,
 {
-    Apply(C::Block),
-    Undo(C::Block),
+    Apply(ChainBlock<C::ParsedBlock>),
+    Undo(ChainBlock<C::ParsedBlock>),
     Reset(spec::sync::BlockRef),
 }
 
@@ -144,12 +155,12 @@ where
     ) -> std::prelude::v1::Result<Self, Self::Error> {
         match value.action.ok_or(())? {
             spec::sync::follow_tip_response::Action::Apply(x) => {
-                let x = C::block_from_any_chain(x).ok_or(())?;
-                Ok(Self::Apply(x))
+                let block = C::block_from_any_chain(x);
+                Ok(Self::Apply(block))
             }
             spec::sync::follow_tip_response::Action::Undo(x) => {
-                let x = C::block_from_any_chain(x).ok_or(())?;
-                Ok(Self::Undo(x))
+                let block = C::block_from_any_chain(x);
+                Ok(Self::Undo(block))
             }
             spec::sync::follow_tip_response::Action::Reset(x) => Ok(Self::Reset(x)),
         }
@@ -172,7 +183,7 @@ impl<C: Chain> LiveTip<C> {
 }
 
 pub struct HistoryPage<C: Chain> {
-    pub items: Vec<C::Block>,
+    pub items: Vec<ChainBlock<C::ParsedBlock>>,
     pub next: Option<spec::sync::BlockRef>,
 }
 
@@ -183,7 +194,6 @@ impl<C: Chain> From<DumpHistoryResponse> for HistoryPage<C> {
                 .block
                 .into_iter()
                 .map(C::block_from_any_chain)
-                .flatten()
                 .collect(),
             next: value.next_token,
         }
@@ -264,5 +274,27 @@ mod tests {
             .unwrap()
             .build::<CardanoSyncClient>()
             .await;
+    }
+
+    #[tokio::test]
+    async fn test_follow_tip() {
+        let mut client = ClientBuilder::new()
+            .uri("http://localhost:50051")
+            .unwrap()
+            .build::<CardanoSyncClient>()
+            .await;
+
+        let mut tip = client.follow_tip(vec![]).await.unwrap();
+
+        for _ in 0..10 {
+            let evt = tip.event().await.unwrap();
+            match evt {
+                TipEvent::Apply(b) => {
+                    dbg!(&b.parsed);
+                    dbg!(hex::encode(&b.native));
+                }
+                _ => println!("other event"),
+            }
+        }
     }
 }
