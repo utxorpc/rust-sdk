@@ -1,23 +1,24 @@
-use utxorpc::{CardanoSyncClient, ClientBuilder, Error};
+use utxorpc::{spec::sync::BlockRef, CardanoSyncClient, ClientBuilder, Error};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     let mut client = ClientBuilder::new()
-        .uri("https://preview.utxorpc-v0.demeter.run")?
-        .metadata(
-            "dmtr-api-key",
-            "dmtr_utxorpc10zrj5dglh53dn8lhgk4p2lffuuu7064j",
-        )?
+        .uri("http://localhost:50051")?
         .build::<CardanoSyncClient>()
         .await;
 
-    let mut start = None;
+    let mut start = Some(BlockRef {
+        index: 52254715,
+        hash: hex::decode("03a5cfb33fd6ffcd7a6b237ba7a612cb8c348fbc37a4ca442e42369fc4c4eb67")
+            .unwrap()
+            .into(),
+    });
 
     loop {
         let page = client.dump_history(start, 20).await?;
 
         for block in page.items {
-            println!("block: {}", block.header.unwrap().slot);
+            println!("block: {}", block.parsed.unwrap().header.unwrap().slot);
         }
 
         match page.next {
