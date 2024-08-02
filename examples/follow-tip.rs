@@ -1,13 +1,9 @@
-use utxorpc::{CardanoSyncClient, ClientBuilder, Error, TipEvent};
+use utxorpc::{spec::sync::BlockRef, CardanoSyncClient, ClientBuilder, Error, TipEvent};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     let mut client = ClientBuilder::new()
-        .uri("https://preview.utxorpc-v0.demeter.run")?
-        .metadata(
-            "dmtr-api-key",
-            "dmtr_utxorpc10zrj5dglh53dn8lhgk4p2lffuuu7064j",
-        )?
+        .uri("http://localhost:50051")?
         .build::<CardanoSyncClient>()
         .await;
 
@@ -15,8 +11,12 @@ async fn main() -> Result<(), Error> {
 
     while let Ok(event) = tip.event().await {
         match event {
-            TipEvent::Apply(block) => println!("apply: {}", block.header.unwrap().slot),
-            TipEvent::Undo(block) => println!("undo: {}", block.header.unwrap().slot),
+            TipEvent::Apply(block) => {
+                println!("apply: {}", block.parsed.unwrap().header.unwrap().slot)
+            }
+            TipEvent::Undo(block) => {
+                println!("undo: {}", block.parsed.unwrap().header.unwrap().slot)
+            }
             TipEvent::Reset(point) => println!("reset: {}", point.index),
         }
     }
