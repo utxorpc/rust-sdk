@@ -250,7 +250,9 @@ impl<C: Chain> DerefMut for SyncClient<C> {
 impl<C: Chain> From<InnerService> for SyncClient<C> {
     fn from(value: InnerService) -> Self {
         Self {
-            inner: spec::sync::sync_service_client::SyncServiceClient::new(value),
+            inner: spec::sync::sync_service_client::SyncServiceClient::new(value)
+                // we need to relax this limit because there are blocks edge-case blocks that, when including resolved inputs, don't fit in gRPC defaults.
+                .max_decoding_message_size(usize::MAX),
             _phantom: Default::default(),
         }
     }
