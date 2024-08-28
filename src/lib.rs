@@ -1,7 +1,7 @@
 use std::{
     marker::PhantomData,
     ops::{Deref, DerefMut},
-    str::{Bytes, FromStr},
+    str::FromStr,
 };
 
 use thiserror::Error;
@@ -108,12 +108,20 @@ pub type NativeBytes = ::bytes::Bytes;
 
 pub trait Chain {
     type ParsedBlock;
+    type ParsedUtxo;
     type Intersect;
 
     fn block_from_any_chain(x: spec::sync::AnyChainBlock) -> ChainBlock<Self::ParsedBlock>;
+    fn utxo_from_any_chain(x: spec::query::AnyUtxoData) -> ChainUtxo<Self::ParsedUtxo>;
 }
 
 pub struct ChainBlock<B> {
+    pub parsed: Option<B>,
+    pub native: NativeBytes,
+}
+
+#[derive(Debug)]
+pub struct ChainUtxo<B> {
     pub parsed: Option<B>,
     pub native: NativeBytes,
 }
@@ -122,12 +130,23 @@ pub struct Cardano;
 
 impl Chain for Cardano {
     type ParsedBlock = spec::cardano::Block;
+    type ParsedUtxo = spec::cardano::TxOutput;
     type Intersect = Vec<spec::sync::BlockRef>;
 
     fn block_from_any_chain(x: spec::sync::AnyChainBlock) -> ChainBlock<Self::ParsedBlock> {
         ChainBlock {
             parsed: match x.chain {
                 Some(spec::sync::any_chain_block::Chain::Cardano(x)) => Some(x),
+                _ => None,
+            },
+            native: x.native_bytes,
+        }
+    }
+
+    fn utxo_from_any_chain(x: spec::query::AnyUtxoData) -> ChainUtxo<Self::ParsedUtxo> {
+        ChainUtxo {
+            parsed: match x.parsed_state {
+                Some(spec::query::any_utxo_data::ParsedState::Cardano(x)) => Some(x),
                 _ => None,
             },
             native: x.native_bytes,
@@ -200,6 +219,59 @@ impl<C: Chain> From<DumpHistoryResponse> for HistoryPage<C> {
     }
 }
 
+pub struct QueryClient<C: Chain> {
+    inner: spec::query::query_service_client::QueryServiceClient<InnerService>,
+    _phantom: PhantomData<C>,
+}
+
+impl<C: Chain> QueryClient<C> {
+    pub async fn read_utxos_by_ref(
+        &mut self,
+        refs: Vec<spec::query::TxoRef>,
+    ) -> Result<Vec<ChainUtxo<C::ParsedUtxo>>> {
+        let req = spec::query::ReadUtxosRequest {
+            keys: refs,
+            field_mask: None,
+        };
+
+        let res = self.inner.read_utxos(req).await?;
+
+        let utxos = res
+            .into_inner()
+            .items
+            .into_iter()
+            .map(C::utxo_from_any_chain)
+            .collect();
+
+        Ok(utxos)
+    }
+}
+
+impl<C: Chain> Deref for QueryClient<C> {
+    type Target = spec::query::query_service_client::QueryServiceClient<InnerService>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<C: Chain> DerefMut for QueryClient<C> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+impl<C: Chain> From<InnerService> for QueryClient<C> {
+    fn from(value: InnerService) -> Self {
+        Self {
+            inner: spec::query::query_service_client::QueryServiceClient::new(value)
+                // we need to relax this limit because there are blocks edge-case blocks that, when including resolved inputs, don't fit in gRPC defaults.
+                .max_decoding_message_size(usize::MAX),
+            _phantom: Default::default(),
+        }
+    }
+}
+
 pub struct SyncClient<C: Chain> {
     inner: spec::sync::sync_service_client::SyncServiceClient<InnerService>,
     _phantom: PhantomData<C>,
@@ -259,6 +331,7 @@ impl<C: Chain> From<InnerService> for SyncClient<C> {
 }
 
 pub type CardanoSyncClient = SyncClient<Cardano>;
+pub type CardanoQueryClient = QueryClient<Cardano>;
 
 #[cfg(test)]
 mod tests {
@@ -297,6 +370,28 @@ mod tests {
                 }
                 _ => println!("other event"),
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_utxo_by_ref() {
+        let mut client = ClientBuilder::new()
+            .uri("http://localhost:50051")
+            .unwrap()
+            .build::<CardanoQueryClient>()
+            .await;
+
+        let refs = vec![spec::query::TxoRef {
+            hash: hex::decode("283a0bae03ded3903a9e62d4001849f047ac73fe5ff7291e1cd8753a0017b6dd")
+                .unwrap()
+                .into(),
+            index: 1,
+        }];
+
+        let utxos = client.read_utxos_by_ref(refs).await.unwrap();
+
+        for utxo in utxos {
+            dbg!(utxo);
         }
     }
 }
