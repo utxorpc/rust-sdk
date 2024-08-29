@@ -12,6 +12,7 @@ use tonic::{
     Streaming,
 };
 
+pub use spec::submit::Stage;
 pub use utxorpc_spec::utxorpc::v1alpha as spec;
 use utxorpc_spec::utxorpc::v1alpha::sync::DumpHistoryResponse;
 
@@ -120,6 +121,11 @@ pub struct ChainBlock<B> {
     pub native: NativeBytes,
 }
 
+pub struct ChainTx<B> {
+    pub parsed: Option<B>,
+    pub native: NativeBytes,
+}
+
 #[derive(Debug)]
 pub struct ChainUtxo<B> {
     pub parsed: Option<B>,
@@ -216,6 +222,24 @@ impl<C: Chain> From<DumpHistoryResponse> for HistoryPage<C> {
                 .collect(),
             next: value.next_token,
         }
+    }
+}
+
+pub struct TxEvent {
+    pub r#ref: NativeBytes,
+    pub stage: Stage,
+}
+pub struct TxEventStream(Streaming<spec::submit::WaitForTxResponse>);
+
+impl TxEventStream {
+    pub async fn event(&mut self) -> Result<Option<TxEvent>> {
+        Ok(self.0.message().await?.map(|event| {
+            let stage = event.stage.try_into().ok().unwrap_or_default();
+            TxEvent {
+                r#ref: event.r#ref,
+                stage,
+            }
+        }))
     }
 }
 
@@ -330,8 +354,70 @@ impl<C: Chain> From<InnerService> for SyncClient<C> {
     }
 }
 
+pub struct SubmitClient<C: Chain> {
+    inner: spec::submit::submit_service_client::SubmitServiceClient<InnerService>,
+    _phantom: PhantomData<C>,
+}
+
+impl<C: Chain> SubmitClient<C> {
+    pub async fn submit_tx<B: Into<NativeBytes>>(
+        &mut self,
+        txs: Vec<B>,
+    ) -> Result<Vec<NativeBytes>> {
+        let tx = txs
+            .into_iter()
+            .map(|bytes| spec::submit::AnyChainTx {
+                r#type: Some(spec::submit::any_chain_tx::Type::Raw(bytes.into())),
+            })
+            .collect();
+
+        let req = spec::submit::SubmitTxRequest { tx };
+
+        let res = self.inner.submit_tx(req).await?;
+        let refs = res.into_inner().r#ref;
+        Ok(refs)
+    }
+
+    pub async fn wait_for_tx<B: Into<NativeBytes>>(
+        &mut self,
+        refs: Vec<B>,
+    ) -> Result<TxEventStream> {
+        let r#ref = refs.into_iter().map(|b| b.into()).collect();
+        let req = spec::submit::WaitForTxRequest { r#ref };
+
+        let res = self.inner.wait_for_tx(req).await?;
+        Ok(TxEventStream(res.into_inner()))
+    }
+}
+
+impl<C: Chain> Deref for SubmitClient<C> {
+    type Target = spec::submit::submit_service_client::SubmitServiceClient<InnerService>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<C: Chain> DerefMut for SubmitClient<C> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+impl<C: Chain> From<InnerService> for SubmitClient<C> {
+    fn from(value: InnerService) -> Self {
+        Self {
+            inner: spec::submit::submit_service_client::SubmitServiceClient::new(value)
+                // we need to relax this limit because there are blocks edge-case blocks that, when including resolved inputs, don't fit in gRPC defaults.
+                .max_decoding_message_size(usize::MAX),
+            _phantom: Default::default(),
+        }
+    }
+}
+
 pub type CardanoSyncClient = SyncClient<Cardano>;
 pub type CardanoQueryClient = QueryClient<Cardano>;
+pub type CardanoSubmitClient = SubmitClient<Cardano>;
 
 #[cfg(test)]
 mod tests {
