@@ -132,6 +132,7 @@ pub struct ChainTx<B> {
 pub struct ChainUtxo<B> {
     pub parsed: Option<B>,
     pub native: NativeBytes,
+    pub txo_ref: Option<spec::query::TxoRef>,
 }
 
 #[derive(Debug)]
@@ -166,6 +167,7 @@ impl Chain for Cardano {
                 _ => None,
             },
             native: x.native_bytes,
+            txo_ref: x.txo_ref,
         }
     }
 }
