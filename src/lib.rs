@@ -111,9 +111,11 @@ pub trait Chain {
     type ParsedBlock;
     type ParsedUtxo;
     type Intersect;
+    type UtxoPattern;
 
     fn block_from_any_chain(x: spec::sync::AnyChainBlock) -> ChainBlock<Self::ParsedBlock>;
     fn utxo_from_any_chain(x: spec::query::AnyUtxoData) -> ChainUtxo<Self::ParsedUtxo>;
+    fn pattern_into_any_chain(x: Self::UtxoPattern) -> spec::query::AnyUtxoPattern;
 }
 
 pub struct ChainBlock<B> {
@@ -132,12 +134,20 @@ pub struct ChainUtxo<B> {
     pub native: NativeBytes,
 }
 
+#[derive(Debug)]
 pub struct Cardano;
 
 impl Chain for Cardano {
     type ParsedBlock = spec::cardano::Block;
     type ParsedUtxo = spec::cardano::TxOutput;
     type Intersect = Vec<spec::sync::BlockRef>;
+    type UtxoPattern = spec::cardano::TxOutputPattern;
+
+    fn pattern_into_any_chain(x: Self::UtxoPattern) -> spec::query::AnyUtxoPattern {
+        spec::query::AnyUtxoPattern {
+            utxo_pattern: Some(spec::query::any_utxo_pattern::UtxoPattern::Cardano(x)),
+        }
+    }
 
     fn block_from_any_chain(x: spec::sync::AnyChainBlock) -> ChainBlock<Self::ParsedBlock> {
         ChainBlock {
@@ -243,80 +253,6 @@ impl TxEventStream {
     }
 }
 
-pub struct QueryClient<C: Chain> {
-    inner: spec::query::query_service_client::QueryServiceClient<InnerService>,
-    _phantom: PhantomData<C>,
-}
-
-impl<C: Chain> QueryClient<C> {
-    pub async fn read_utxos(
-        &mut self,
-        refs: Vec<spec::query::TxoRef>,
-    ) -> Result<Vec<ChainUtxo<C::ParsedUtxo>>> {
-        let req = spec::query::ReadUtxosRequest {
-            keys: refs,
-            field_mask: None,
-        };
-
-        let res = self.inner.read_utxos(req).await?;
-
-        let utxos = res
-            .into_inner()
-            .items
-            .into_iter()
-            .map(C::utxo_from_any_chain)
-            .collect();
-
-        Ok(utxos)
-    }
-
-    pub async fn search_utxos(
-        &mut self,
-        predicate: spec::query::UtxoPredicate,
-    ) -> Result<Vec<ChainUtxo<C::ParsedUtxo>>> {
-        let req = spec::query::SearchUtxosRequest {
-            predicate: Some(predicate),
-            field_mask: None,
-        };
-
-        let res = self.inner.search_utxos(req).await?;
-
-        let utxos = res
-            .into_inner()
-            .items
-            .into_iter()
-            .map(C::utxo_from_any_chain)
-            .collect();
-
-        Ok(utxos)
-    }
-}
-
-impl<C: Chain> Deref for QueryClient<C> {
-    type Target = spec::query::query_service_client::QueryServiceClient<InnerService>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl<C: Chain> DerefMut for QueryClient<C> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
-
-impl<C: Chain> From<InnerService> for QueryClient<C> {
-    fn from(value: InnerService) -> Self {
-        Self {
-            inner: spec::query::query_service_client::QueryServiceClient::new(value)
-                // we need to relax this limit because there are blocks edge-case blocks that, when including resolved inputs, don't fit in gRPC defaults.
-                .max_decoding_message_size(usize::MAX),
-            _phantom: Default::default(),
-        }
-    }
-}
-
 pub struct SyncClient<C: Chain> {
     inner: spec::sync::sync_service_client::SyncServiceClient<InnerService>,
     _phantom: PhantomData<C>,
@@ -368,6 +304,117 @@ impl<C: Chain> From<InnerService> for SyncClient<C> {
     fn from(value: InnerService) -> Self {
         Self {
             inner: spec::sync::sync_service_client::SyncServiceClient::new(value)
+                // we need to relax this limit because there are blocks edge-case blocks that, when including resolved inputs, don't fit in gRPC defaults.
+                .max_decoding_message_size(usize::MAX),
+            _phantom: Default::default(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct UtxoPage<C: Chain> {
+    pub items: Vec<ChainUtxo<C::ParsedUtxo>>,
+    pub next: Option<String>,
+}
+
+impl<C: Chain> From<spec::query::SearchUtxosResponse> for UtxoPage<C> {
+    fn from(value: spec::query::SearchUtxosResponse) -> Self {
+        Self {
+            items: value
+                .items
+                .into_iter()
+                .map(C::utxo_from_any_chain)
+                .collect(),
+            next: match value.next_token.is_empty() {
+                true => None,
+                false => Some(value.next_token),
+            },
+        }
+    }
+}
+
+pub struct QueryClient<C: Chain> {
+    inner: spec::query::query_service_client::QueryServiceClient<InnerService>,
+    _phantom: PhantomData<C>,
+}
+
+impl<C: Chain> QueryClient<C> {
+    pub async fn read_utxos(
+        &mut self,
+        refs: Vec<spec::query::TxoRef>,
+    ) -> Result<Vec<ChainUtxo<C::ParsedUtxo>>> {
+        let req = spec::query::ReadUtxosRequest {
+            keys: refs,
+            field_mask: None,
+        };
+
+        let res = self.inner.read_utxos(req).await?;
+
+        let utxos = res
+            .into_inner()
+            .items
+            .into_iter()
+            .map(C::utxo_from_any_chain)
+            .collect();
+
+        Ok(utxos)
+    }
+
+    pub async fn search_utxos(
+        &mut self,
+        predicate: spec::query::UtxoPredicate,
+        start_token: Option<String>,
+        max_items: u32,
+    ) -> Result<UtxoPage<C>> {
+        let req = spec::query::SearchUtxosRequest {
+            predicate: Some(predicate),
+            field_mask: None,
+            start_token: start_token.unwrap_or_default(),
+            max_items: max_items as i32,
+        };
+
+        let res = self.inner.search_utxos(req).await?;
+
+        let utxos = res.into_inner().into();
+
+        Ok(utxos)
+    }
+
+    pub async fn match_utxos(
+        &mut self,
+        pattern: C::UtxoPattern,
+        start_token: Option<String>,
+        max_items: u32,
+    ) -> Result<UtxoPage<C>> {
+        let predicate = spec::query::UtxoPredicate {
+            r#match: Some(C::pattern_into_any_chain(pattern)),
+            not: vec![],
+            all_of: vec![],
+            any_of: vec![],
+        };
+
+        self.search_utxos(predicate, start_token, max_items).await
+    }
+}
+
+impl<C: Chain> Deref for QueryClient<C> {
+    type Target = spec::query::query_service_client::QueryServiceClient<InnerService>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<C: Chain> DerefMut for QueryClient<C> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+impl<C: Chain> From<InnerService> for QueryClient<C> {
+    fn from(value: InnerService) -> Self {
+        Self {
+            inner: spec::query::query_service_client::QueryServiceClient::new(value)
                 // we need to relax this limit because there are blocks edge-case blocks that, when including resolved inputs, don't fit in gRPC defaults.
                 .max_decoding_message_size(usize::MAX),
             _phantom: Default::default(),
@@ -481,7 +528,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_read_utxo_by_ref() {
+    async fn test_read_utxo() {
         let mut client = ClientBuilder::new()
             .uri("https://cardano-preview.utxorpc.cloud")
             .unwrap()
@@ -502,5 +549,33 @@ mod tests {
         for utxo in utxos {
             dbg!(utxo);
         }
+    }
+
+    #[tokio::test]
+    async fn test_match_utxos() {
+        let mut client = ClientBuilder::new()
+            .uri("https://cardano-preview.utxorpc.cloud")
+            .unwrap()
+            .metadata("dmtr-api-key", "xxxx")
+            .unwrap()
+            .build::<CardanoQueryClient>()
+            .await;
+
+        let pattern = spec::cardano::TxOutputPattern {
+            address: Some(spec::cardano::AddressPattern {
+                exact_address: hex::decode(
+                    "d869626262626262626262626262626262626262626262626262626262626262",
+                )
+                .unwrap()
+                .into(),
+                payment_part: Default::default(),
+                delegation_part: Default::default(),
+            }),
+            asset: None,
+        };
+
+        let utxos = client.match_utxos(pattern, None, 100).await.unwrap();
+
+        dbg!(&utxos);
     }
 }
