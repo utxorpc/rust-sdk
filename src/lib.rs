@@ -27,6 +27,7 @@ pub enum Error {
 
 pub type Result<T> = core::result::Result<T, Error>;
 
+#[derive(Debug, Clone)]
 pub struct MetadataInterceptor {
     map: MetadataMap,
 }
@@ -118,24 +119,26 @@ pub trait Chain {
     fn pattern_into_any_chain(x: Self::UtxoPattern) -> spec::query::AnyUtxoPattern;
 }
 
+#[derive(Debug, Clone)]
 pub struct ChainBlock<B> {
     pub parsed: Option<B>,
     pub native: NativeBytes,
 }
 
+#[derive(Debug, Clone)]
 pub struct ChainTx<B> {
     pub parsed: Option<B>,
     pub native: NativeBytes,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ChainUtxo<B> {
     pub parsed: Option<B>,
     pub native: NativeBytes,
     pub txo_ref: Option<spec::query::TxoRef>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Cardano;
 
 impl Chain for Cardano {
@@ -172,6 +175,7 @@ impl Chain for Cardano {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum TipEvent<C>
 where
     C: Chain,
@@ -219,6 +223,7 @@ impl<C: Chain> LiveTip<C> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct HistoryPage<C: Chain> {
     pub items: Vec<ChainBlock<C::ParsedBlock>>,
     pub next: Option<spec::sync::BlockRef>,
@@ -237,10 +242,12 @@ impl<C: Chain> From<DumpHistoryResponse> for HistoryPage<C> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct TxEvent {
     pub r#ref: NativeBytes,
     pub stage: Stage,
 }
+
 pub struct TxEventStream(Streaming<spec::submit::WaitForTxResponse>);
 
 impl TxEventStream {
@@ -255,6 +262,7 @@ impl TxEventStream {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct SyncClient<C: Chain> {
     inner: spec::sync::sync_service_client::SyncServiceClient<InnerService>,
     _phantom: PhantomData<C>,
@@ -313,7 +321,7 @@ impl<C: Chain> From<InnerService> for SyncClient<C> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UtxoPage<C: Chain> {
     pub items: Vec<ChainUtxo<C::ParsedUtxo>>,
     pub next: Option<String>,
@@ -335,6 +343,7 @@ impl<C: Chain> From<spec::query::SearchUtxosResponse> for UtxoPage<C> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct QueryClient<C: Chain> {
     inner: spec::query::query_service_client::QueryServiceClient<InnerService>,
     _phantom: PhantomData<C>,
@@ -424,6 +433,7 @@ impl<C: Chain> From<InnerService> for QueryClient<C> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct SubmitClient<C: Chain> {
     inner: spec::submit::submit_service_client::SubmitServiceClient<InnerService>,
     _phantom: PhantomData<C>,
