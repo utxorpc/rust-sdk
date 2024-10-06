@@ -249,7 +249,7 @@ pub struct QueryClient<C: Chain> {
 }
 
 impl<C: Chain> QueryClient<C> {
-    pub async fn read_utxos_by_ref(
+    pub async fn read_utxos(
         &mut self,
         refs: Vec<spec::query::TxoRef>,
     ) -> Result<Vec<ChainUtxo<C::ParsedUtxo>>> {
@@ -259,6 +259,27 @@ impl<C: Chain> QueryClient<C> {
         };
 
         let res = self.inner.read_utxos(req).await?;
+
+        let utxos = res
+            .into_inner()
+            .items
+            .into_iter()
+            .map(C::utxo_from_any_chain)
+            .collect();
+
+        Ok(utxos)
+    }
+
+    pub async fn search_utxos(
+        &mut self,
+        predicate: spec::query::UtxoPredicate,
+    ) -> Result<Vec<ChainUtxo<C::ParsedUtxo>>> {
+        let req = spec::query::SearchUtxosRequest {
+            predicate: Some(predicate),
+            field_mask: None,
+        };
+
+        let res = self.inner.search_utxos(req).await?;
 
         let utxos = res
             .into_inner()
@@ -462,7 +483,9 @@ mod tests {
     #[tokio::test]
     async fn test_read_utxo_by_ref() {
         let mut client = ClientBuilder::new()
-            .uri("http://localhost:50051")
+            .uri("https://cardano-preview.utxorpc.cloud")
+            .unwrap()
+            .metadata("dmtr-api-key", "xxxx")
             .unwrap()
             .build::<CardanoQueryClient>()
             .await;
@@ -474,7 +497,7 @@ mod tests {
             index: 1,
         }];
 
-        let utxos = client.read_utxos_by_ref(refs).await.unwrap();
+        let utxos = client.read_utxos(refs).await.unwrap();
 
         for utxo in utxos {
             dbg!(utxo);
