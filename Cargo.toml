@@ -15,7 +15,7 @@ bytes = "1.6.1"
 thiserror = "1.0.57"
 tokio = "1.35.1"
 tonic = { version = "^0.11", features = ["tls-roots"] }
-utxorpc-spec = { version = "0.9.0" }
+utxorpc-spec = { version = "0.10.0" }
 # utxorpc-spec = { path = "../spec/gen/rust" }
 
 [dev-dependencies]
