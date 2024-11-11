@@ -8,12 +8,13 @@ use thiserror::Error;
 use tonic::{
     metadata::{Ascii, MetadataKey, MetadataMap, MetadataValue},
     service::{interceptor::InterceptedService, Interceptor},
-    transport::Endpoint,
+    transport::{ClientTlsConfig, Endpoint},
     Streaming,
 };
 
 pub use spec::submit::Stage;
 pub use utxorpc_spec::utxorpc::v1alpha as spec;
+
 use utxorpc_spec::utxorpc::v1alpha::sync::DumpHistoryResponse;
 
 #[derive(Error, Debug)]
@@ -93,7 +94,13 @@ impl ClientBuilder {
     where
         T: From<InnerService>,
     {
-        let channel = self.endpoint.clone().unwrap().connect_lazy();
+        let channel = self
+            .endpoint
+            .clone()
+            .unwrap()
+            .tls_config(ClientTlsConfig::new().with_enabled_roots())
+            .unwrap()
+            .connect_lazy();
 
         let inner = InterceptedService::new(
             channel,
@@ -264,11 +271,19 @@ impl TxEventStream {
 
 #[derive(Debug, Clone)]
 pub struct SyncClient<C: Chain> {
-    inner: spec::sync::sync_service_client::SyncServiceClient<InnerService>,
+    pub inner: spec::sync::sync_service_client::SyncServiceClient<InnerService>,
     _phantom: PhantomData<C>,
 }
 
 impl<C: Chain> SyncClient<C> {
+    pub async fn read_tip(&mut self) -> Result<Option<spec::sync::BlockRef>> {
+        let req = spec::sync::ReadTipRequest {};
+
+        let res = self.inner.read_tip(req).await?.into_inner();
+
+        Ok(res.tip)
+    }
+
     pub async fn follow_tip(&mut self, intersect: Vec<spec::sync::BlockRef>) -> Result<LiveTip<C>> {
         let req = spec::sync::FollowTipRequest {
             intersect,
@@ -506,11 +521,11 @@ mod tests {
     #[tokio::test]
     async fn test_client_build() {
         ClientBuilder::new()
-            .uri("https://preview.utxorpc-v0.demeter.run")
+            .uri("https://mainnet.utxorpc-v0.demeter.run")
             .unwrap()
             .metadata(
                 "dmtr-api-key",
-                "dmtr_utxorpc10zrj5dglh53dn8lhgk4p2lffuuu7064j",
+                "dmtr_utxorpc1wgnnj0qcfj32zxsz2uc8d4g7uclm2s2w",
             )
             .unwrap()
             .build::<CardanoSyncClient>()
@@ -520,7 +535,12 @@ mod tests {
     #[tokio::test]
     async fn test_follow_tip() {
         let mut client = ClientBuilder::new()
-            .uri("http://localhost:50051")
+            .uri("https://mainnet.utxorpc-v0.demeter.run")
+            .unwrap()
+            .metadata(
+                "dmtr-api-key",
+                "dmtr_utxorpc1wgnnj0qcfj32zxsz2uc8d4g7uclm2s2w",
+            )
             .unwrap()
             .build::<CardanoSyncClient>()
             .await;
@@ -540,11 +560,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_read_tip() {
+        let mut client = ClientBuilder::new()
+            .uri("https://mainnet.utxorpc-v0.demeter.run")
+            .unwrap()
+            .metadata(
+                "dmtr-api-key",
+                "dmtr_utxorpc1wgnnj0qcfj32zxsz2uc8d4g7uclm2s2w",
+            )
+            .unwrap()
+            .build::<CardanoSyncClient>()
+            .await;
+
+        let tip = client.read_tip().await.unwrap().unwrap();
+
+        dbg!(&tip);
+    }
+
+    #[tokio::test]
     async fn test_read_utxo() {
         let mut client = ClientBuilder::new()
-            .uri("https://cardano-preview.utxorpc.cloud")
+            .uri("https://mainnet.utxorpc-v0.demeter.run")
             .unwrap()
-            .metadata("dmtr-api-key", "xxxx")
+            .metadata(
+                "dmtr-api-key",
+                "dmtr_utxorpc1wgnnj0qcfj32zxsz2uc8d4g7uclm2s2w",
+            )
             .unwrap()
             .build::<CardanoQueryClient>()
             .await;
@@ -566,9 +607,12 @@ mod tests {
     #[tokio::test]
     async fn test_match_utxos() {
         let mut client = ClientBuilder::new()
-            .uri("https://cardano-preview.utxorpc.cloud")
+            .uri("https://mainnet.utxorpc-v0.demeter.run")
             .unwrap()
-            .metadata("dmtr-api-key", "xxxx")
+            .metadata(
+                "dmtr-api-key",
+                "dmtr_utxorpc1wgnnj0qcfj32zxsz2uc8d4g7uclm2s2w",
+            )
             .unwrap()
             .build::<CardanoQueryClient>()
             .await;
