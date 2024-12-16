@@ -9,7 +9,6 @@ documentation = "https://docs.rs/utxorpc"
 license = "Apache-2.0"
 readme = "README.md"
 authors = ["Santiago Carmuega <santiago@carmuega.me>"]
-pre-release-hook = ["git", "cliff", "-o", "CHANGELOG.md", "--tag", "{{version}}"]
 
 [dependencies]
 bytes = "1.6.1"
@@ -22,3 +21,8 @@ utxorpc-spec = { version = "0.14.0" }
 [dev-dependencies]
 hex = "0.4.3"
 tokio = { version = "^1", features = ["full"] }
+
+[workspace.metadata.release]
+push = false
+publish = false
+pre-release-hook = ["git", "cliff", "-o", "CHANGELOG.md", "--tag", "{{version}}"]
