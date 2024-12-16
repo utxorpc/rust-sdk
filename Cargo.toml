@@ -9,6 +9,7 @@ documentation = "https://docs.rs/utxorpc"
 license = "Apache-2.0"
 readme = "README.md"
 authors = ["Santiago Carmuega <santiago@carmuega.me>"]
+pre-release-hook = ["git", "cliff", "-o", "CHANGELOG.md", "--tag", "{{version}}"]
 
 [dependencies]
 bytes = "1.6.1"
