@@ -2,11 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.8] - 2024-12-16
+## [0.9.0] - 2024-12-16
 
 ### ⚙️ Miscellaneous Tasks
 
 - Update specs to v0.14 (#21)
+- Add automatic changelog (#22)
+- Configure release procedure (#23)
 
 ## [0.8.0] - 2024-11-11
 
