@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - Update specs to v0.14 (#21)
 - Add automatic changelog (#22)
 - Configure release procedure (#23)
+- Release utxorpc version 0.9.0
 
 ## [0.8.0] - 2024-11-11
 
