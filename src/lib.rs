@@ -24,6 +24,9 @@ pub enum Error {
 
     #[error("grpc error")]
     GrpcError(#[from] tonic::Status),
+
+    #[error("parse error")]
+    ParseError(String),
 }
 
 pub type Result<T> = core::result::Result<T, Error>;
@@ -218,15 +221,16 @@ where
 pub struct LiveTip<C: Chain>(Streaming<spec::sync::FollowTipResponse>, PhantomData<C>);
 
 impl<C: Chain> LiveTip<C> {
-    pub async fn event(&mut self) -> Result<TipEvent<C>> {
-        loop {
-            if let Some(event) = self.0.message().await? {
-                match TipEvent::try_from(event) {
-                    Ok(evt) => return Ok(evt),
-                    Err(_) => continue,
-                }
-            }
-        }
+    pub async fn event(&mut self) -> Result<Option<TipEvent<C>>> {
+        let tip_event = match self.0.message().await? {
+            Some(event) => Some(
+                TipEvent::try_from(event)
+                    .map_err(|_| Error::ParseError("error to parse FollowTipResponse".into()))?,
+            ),
+            None => None,
+        };
+
+        Ok(tip_event)
     }
 }
 
@@ -548,7 +552,7 @@ mod tests {
         let mut tip = client.follow_tip(vec![]).await.unwrap();
 
         for _ in 0..10 {
-            let evt = tip.event().await.unwrap();
+            let evt = tip.event().await.unwrap().unwrap();
             match evt {
                 TipEvent::Apply(b) => {
                     dbg!(&b.parsed);

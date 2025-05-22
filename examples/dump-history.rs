@@ -8,10 +8,11 @@ async fn main() -> Result<(), Error> {
         .await;
 
     let mut start = Some(BlockRef {
-        index: 52254715,
+        slot: 52254715,
         hash: hex::decode("03a5cfb33fd6ffcd7a6b237ba7a612cb8c348fbc37a4ca442e42369fc4c4eb67")
             .unwrap()
             .into(),
+        ..Default::default()
     });
 
     loop {

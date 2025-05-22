@@ -1,4 +1,4 @@
-use utxorpc::{spec::sync::BlockRef, CardanoSyncClient, ClientBuilder, Error, TipEvent};
+use utxorpc::{CardanoSyncClient, ClientBuilder, Error, TipEvent};
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -9,7 +9,7 @@ async fn main() -> Result<(), Error> {
 
     let mut tip = client.follow_tip(vec![]).await.unwrap();
 
-    while let Ok(event) = tip.event().await {
+    while let Ok(Some(event)) = tip.event().await {
         match event {
             TipEvent::Apply(block) => {
                 println!("apply: {}", block.parsed.unwrap().header.unwrap().slot)
@@ -17,7 +17,7 @@ async fn main() -> Result<(), Error> {
             TipEvent::Undo(block) => {
                 println!("undo: {}", block.parsed.unwrap().header.unwrap().slot)
             }
-            TipEvent::Reset(point) => println!("reset: {}", point.index),
+            TipEvent::Reset(point) => println!("reset: {}", point.slot),
         }
     }
 
