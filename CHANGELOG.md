@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.11.0] - 2025-05-23
+
+### 🐛 Bug Fixes
+
+- Avoid infinite loop when the stream is closed (#25)
+
+## [0.10.0] - 2024-12-29
+
+### ⚙️ Miscellaneous Tasks
+
+- Release utxorpc version 0.10.0
+
 ## [0.9.0] - 2024-12-16
 
 ### ⚙️ Miscellaneous Tasks
