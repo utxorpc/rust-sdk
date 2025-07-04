@@ -369,6 +369,19 @@ pub struct QueryClient<C: Chain> {
 }
 
 impl<C: Chain> QueryClient<C> {
+    pub async fn read_params(&mut self) -> Result<spec::query::AnyChainParams> {
+        let req = spec::query::ReadParamsRequest {
+            field_mask: None,
+        };
+
+        let res = self.inner.read_params(req).await?;
+        let params_response = res.into_inner();
+
+        params_response
+            .values
+            .ok_or_else(|| Error::ParseError("No parameters in response".to_string()))
+    }
+
     pub async fn read_utxos(
         &mut self,
         refs: Vec<spec::query::TxoRef>,
@@ -609,7 +622,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_match_utxos() {
+    async fn test_match_utxos_by_address() {
         let mut client = ClientBuilder::new()
             .uri("https://mainnet.utxorpc-v0.demeter.run")
             .unwrap()
@@ -624,7 +637,7 @@ mod tests {
         let pattern = spec::cardano::TxOutputPattern {
             address: Some(spec::cardano::AddressPattern {
                 exact_address: hex::decode(
-                    "d869626262626262626262626262626262626262626262626262626262626262",
+                    "00729c67d0de8cde3c0afc768fb0fcb1596e8cfcbf781b553efcd228813b7bb577937983e016d4e8429ff48cf386d6818883f9e88b62a804e0",
                 )
                 .unwrap()
                 .into(),
@@ -634,8 +647,146 @@ mod tests {
             asset: None,
         };
 
-        let utxos = client.match_utxos(pattern, None, 100).await.unwrap();
+        let utxos = client.match_utxos(pattern, None, 10).await.unwrap();
 
         dbg!(&utxos);
+    }
+
+    #[tokio::test]
+    async fn test_match_utxos_by_payment_part() {
+        let mut client = ClientBuilder::new()
+            .uri("https://mainnet.utxorpc-v0.demeter.run")
+            .unwrap()
+            .metadata(
+                "dmtr-api-key",
+                "dmtr_utxorpc1wgnnj0qcfj32zxsz2uc8d4g7uclm2s2w",
+            )
+            .unwrap()
+            .build::<CardanoQueryClient>()
+            .await;
+
+        let pattern = spec::cardano::TxOutputPattern {
+            address: Some(spec::cardano::AddressPattern {
+                exact_address: Default::default(),
+                payment_part: hex::decode("729c67d0de8cde3c0afc768fb0fcb1596e8cfcbf781b553efcd22881")
+                    .unwrap()
+                    .into(),
+                delegation_part: Default::default(),
+            }),
+            asset: None,
+        };
+
+        let utxos = client.match_utxos(pattern, None, 10).await.unwrap();
+
+        dbg!(&utxos);
+    }
+
+    #[tokio::test]
+    async fn test_match_utxos_by_delegation_part() {
+        let mut client = ClientBuilder::new()
+            .uri("https://mainnet.utxorpc-v0.demeter.run")
+            .unwrap()
+            .metadata(
+                "dmtr-api-key",
+                "dmtr_utxorpc1wgnnj0qcfj32zxsz2uc8d4g7uclm2s2w",
+            )
+            .unwrap()
+            .build::<CardanoQueryClient>()
+            .await;
+
+        let pattern = spec::cardano::TxOutputPattern {
+            address: Some(spec::cardano::AddressPattern {
+                exact_address: Default::default(),
+                payment_part: Default::default(),
+                delegation_part: hex::decode("3b7bb577937983e016d4e8429ff48cf386d6818883f9e88b62a804e0")
+                    .unwrap()
+                    .into(),
+            }),
+            asset: None,
+        };
+
+        let utxos = client.match_utxos(pattern, None, 10).await.unwrap();
+
+        dbg!(&utxos);
+    }
+
+    #[tokio::test]
+    async fn test_match_utxos_by_policy_id() {
+        let mut client = ClientBuilder::new()
+            .uri("https://mainnet.utxorpc-v0.demeter.run")
+            .unwrap()
+            .metadata(
+                "dmtr-api-key",
+                "dmtr_utxorpc1wgnnj0qcfj32zxsz2uc8d4g7uclm2s2w",
+            )
+            .unwrap()
+            .build::<CardanoQueryClient>()
+            .await;
+
+        let pattern = spec::cardano::TxOutputPattern {
+            address: None,
+            asset: Some(spec::cardano::AssetPattern {
+                policy_id: hex::decode("047e0f912c4260fe66ae271e5ae494dcd5f79635bbbb1386be195f4e")
+                    .unwrap()
+                    .into(),
+                asset_name: Default::default(),
+            }),
+        };
+
+        let utxos = client.match_utxos(pattern, None, 10).await.unwrap();
+
+        dbg!(&utxos);
+    }
+
+    #[tokio::test]
+    async fn test_match_utxos_by_asset() {
+        let mut client = ClientBuilder::new()
+            .uri("https://mainnet.utxorpc-v0.demeter.run")
+            .unwrap()
+            .metadata(
+                "dmtr-api-key",
+                "dmtr_utxorpc1wgnnj0qcfj32zxsz2uc8d4g7uclm2s2w",
+            )
+            .unwrap()
+            .build::<CardanoQueryClient>()
+            .await;
+
+        // The asset parameter contains both policyId and asset name concatenated
+        let full_asset = hex::decode("047e0f912c4260fe66ae271e5ae494dcd5f79635bbbb1386be195f4e414c4c45594b41545a3030303630")
+            .unwrap();
+        
+        // First 28 bytes (56 hex chars) is the policy ID
+        let policy_id = full_asset[..28].to_vec();
+        let asset_name = full_asset[28..].to_vec();
+
+        let pattern = spec::cardano::TxOutputPattern {
+            address: None,
+            asset: Some(spec::cardano::AssetPattern {
+                policy_id: policy_id.into(),
+                asset_name: Default::default(), // Empty to avoid "conflicting asset criteria"
+            }),
+        };
+
+        let utxos = client.match_utxos(pattern, None, 10).await.unwrap();
+
+        dbg!(&utxos);
+    }
+
+    #[tokio::test]
+    async fn test_read_params() {
+        let mut client = ClientBuilder::new()
+            .uri("https://mainnet.utxorpc-v0.demeter.run")
+            .unwrap()
+            .metadata(
+                "dmtr-api-key",
+                "dmtr_utxorpc1wgnnj0qcfj32zxsz2uc8d4g7uclm2s2w",
+            )
+            .unwrap()
+            .build::<CardanoQueryClient>()
+            .await;
+
+        let params = client.read_params().await.unwrap();
+
+        dbg!(&params);
     }
 }
