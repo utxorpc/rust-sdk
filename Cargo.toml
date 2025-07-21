@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "utxorpc-tests"]
+resolver = "2"
+
 [package]
 name = "utxorpc"
 version = "0.11.0"
@@ -17,15 +21,6 @@ tokio = "1.46.1"
 tonic = { version = "0.12", features = ["tls-roots"] }
 utxorpc-spec = { version = "0.17.0" }
 # utxorpc-spec = { path = "../spec/gen/rust" }
-[dev-dependencies]
-hex = "0.4.3"
-tokio = { version = "1.46.1", features = ["full"] }
-whisky = "1.0.9"
-whisky-provider = "1.0.9"
-whisky-common = "1.0.9"
-bech32 = "0.11.0"
-blake2 = "0.10.4"
-serial_test = "3.2.0"
 
 [workspace.metadata.release]
 push = false
