@@ -1,0 +1,16 @@
+[package]
+name = "utxorpc-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+utxorpc = { path = ".." }
+hex = "0.4.3"
+tokio = { version = "1.46.1", features = ["full"] }
+whisky = "1.0.9"
+whisky-provider = "1.0.9"
+whisky-common = "1.0.9"
+bech32 = "0.11.0"
+blake2 = "0.10.4"
+serial_test = "3.2.0"
