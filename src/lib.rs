@@ -118,13 +118,53 @@ impl ClientBuilder {
 
 pub type NativeBytes = ::bytes::Bytes;
 
+macro_rules! impl_grpc_client {
+    (
+        $client_name:ident<$chain:ident: Chain>,
+        $service_type:ty,
+        $client_type:ty
+    ) => {
+        #[derive(Debug, Clone)]
+        pub struct $client_name<$chain: Chain> {
+            pub inner: $client_type,
+            _phantom: PhantomData<$chain>,
+        }
+
+        impl<$chain: Chain> Deref for $client_name<$chain> {
+            type Target = $client_type;
+
+            fn deref(&self) -> &Self::Target {
+                &self.inner
+            }
+        }
+
+        impl<$chain: Chain> DerefMut for $client_name<$chain> {
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                &mut self.inner
+            }
+        }
+
+        impl<$chain: Chain> From<InnerService> for $client_name<$chain> {
+            fn from(value: InnerService) -> Self {
+                Self {
+                    inner: <$client_type>::new(value)
+                        .max_decoding_message_size(usize::MAX),
+                    _phantom: Default::default(),
+                }
+            }
+        }
+    };
+}
+
 pub trait Chain {
     type ParsedBlock;
+    type ParsedTx;
     type ParsedUtxo;
     type Intersect;
     type UtxoPattern;
 
     fn block_from_any_chain(x: spec::sync::AnyChainBlock) -> ChainBlock<Self::ParsedBlock>;
+    fn tx_from_any_chain(x: spec::watch::AnyChainTx) -> ChainTx<Self::ParsedTx>;
     fn utxo_from_any_chain(x: spec::query::AnyUtxoData) -> ChainUtxo<Self::ParsedUtxo>;
     fn pattern_into_any_chain(x: Self::UtxoPattern) -> spec::query::AnyUtxoPattern;
 }
@@ -153,6 +193,7 @@ pub struct Cardano;
 
 impl Chain for Cardano {
     type ParsedBlock = spec::cardano::Block;
+    type ParsedTx = spec::cardano::Tx;
     type ParsedUtxo = spec::cardano::TxOutput;
     type Intersect = Vec<spec::sync::BlockRef>;
     type UtxoPattern = spec::cardano::TxOutputPattern;
@@ -170,6 +211,16 @@ impl Chain for Cardano {
                 _ => None,
             },
             native: x.native_bytes,
+        }
+    }
+
+    fn tx_from_any_chain(x: spec::watch::AnyChainTx) -> ChainTx<Self::ParsedTx> {
+        ChainTx {
+            parsed: match x.chain {
+                Some(spec::watch::any_chain_tx::Chain::Cardano(tx)) => Some(tx),
+                _ => None,
+            },
+            native: Default::default(),
         }
     }
 
@@ -273,11 +324,19 @@ impl TxEventStream {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct SyncClient<C: Chain> {
-    pub inner: spec::sync::sync_service_client::SyncServiceClient<InnerService>,
-    _phantom: PhantomData<C>,
+pub struct MempoolStream(Streaming<spec::submit::WatchMempoolResponse>);
+
+impl MempoolStream {
+    pub async fn tx(&mut self) -> Result<Option<spec::submit::TxInMempool>> {
+        Ok(self.0.message().await?.and_then(|resp| resp.tx))
+    }
 }
+
+impl_grpc_client!(
+    SyncClient<C: Chain>,
+    spec::sync::sync_service_client::SyncServiceClient<InnerService>,
+    spec::sync::sync_service_client::SyncServiceClient<InnerService>
+);
 
 impl<C: Chain> SyncClient<C> {
     pub async fn read_tip(&mut self) -> Result<Option<spec::sync::BlockRef>> {
@@ -313,30 +372,25 @@ impl<C: Chain> SyncClient<C> {
         let res = self.inner.dump_history(req).await?;
         Ok(res.into_inner().into())
     }
-}
 
-impl<C: Chain> Deref for SyncClient<C> {
-    type Target = spec::sync::sync_service_client::SyncServiceClient<InnerService>;
+    pub async fn fetch_block(
+        &mut self,
+        r#ref: Vec<spec::sync::BlockRef>,
+    ) -> Result<Vec<ChainBlock<C::ParsedBlock>>> {
+        let req = spec::sync::FetchBlockRequest {
+            r#ref,
+            field_mask: None,
+        };
 
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
+        let res = self.inner.fetch_block(req).await?;
+        let blocks = res
+            .into_inner()
+            .block
+            .into_iter()
+            .map(C::block_from_any_chain)
+            .collect();
 
-impl<C: Chain> DerefMut for SyncClient<C> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
-
-impl<C: Chain> From<InnerService> for SyncClient<C> {
-    fn from(value: InnerService) -> Self {
-        Self {
-            inner: spec::sync::sync_service_client::SyncServiceClient::new(value)
-                // we need to relax this limit because there are blocks edge-case blocks that, when including resolved inputs, don't fit in gRPC defaults.
-                .max_decoding_message_size(usize::MAX),
-            _phantom: Default::default(),
-        }
+        Ok(blocks)
     }
 }
 
@@ -362,13 +416,54 @@ impl<C: Chain> From<spec::query::SearchUtxosResponse> for UtxoPage<C> {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct QueryClient<C: Chain> {
-    inner: spec::query::query_service_client::QueryServiceClient<InnerService>,
-    _phantom: PhantomData<C>,
-}
+impl_grpc_client!(
+    QueryClient<C: Chain>,
+    spec::query::query_service_client::QueryServiceClient<InnerService>,
+    spec::query::query_service_client::QueryServiceClient<InnerService>
+);
 
 impl<C: Chain> QueryClient<C> {
+    pub async fn read_params(&mut self) -> Result<spec::query::AnyChainParams> {
+        let req = spec::query::ReadParamsRequest {
+            field_mask: None,
+        };
+
+        let res = self.inner.read_params(req).await?;
+        let params_response = res.into_inner();
+
+        params_response
+            .values
+            .ok_or_else(|| Error::ParseError("No parameters in response".to_string()))
+    }
+
+    /// Read the genesis configuration of the blockchain.
+    /// Returns the raw genesis data as bytes.
+    pub async fn read_genesis(&mut self) -> Result<NativeBytes> {
+        let req = spec::query::ReadGenesisRequest {
+            field_mask: None,
+        };
+
+        let res = self.inner.read_genesis(req).await?;
+        let genesis_response = res.into_inner();
+
+        Ok(genesis_response.genesis)
+    }
+
+    /// Read a summary of the blockchain eras.
+    /// Returns information about different eras in the blockchain's history.
+    pub async fn read_era_summary(&mut self) -> Result<spec::query::read_era_summary_response::Summary> {
+        let req = spec::query::ReadEraSummaryRequest {
+            field_mask: None,
+        };
+
+        let res = self.inner.read_era_summary(req).await?;
+        let era_response = res.into_inner();
+
+        era_response
+            .summary
+            .ok_or_else(|| Error::ParseError("No era summary data in response".to_string()))
+    }
+
     pub async fn read_utxos(
         &mut self,
         refs: Vec<spec::query::TxoRef>,
@@ -427,36 +522,11 @@ impl<C: Chain> QueryClient<C> {
     }
 }
 
-impl<C: Chain> Deref for QueryClient<C> {
-    type Target = spec::query::query_service_client::QueryServiceClient<InnerService>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl<C: Chain> DerefMut for QueryClient<C> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
-
-impl<C: Chain> From<InnerService> for QueryClient<C> {
-    fn from(value: InnerService) -> Self {
-        Self {
-            inner: spec::query::query_service_client::QueryServiceClient::new(value)
-                // we need to relax this limit because there are blocks edge-case blocks that, when including resolved inputs, don't fit in gRPC defaults.
-                .max_decoding_message_size(usize::MAX),
-            _phantom: Default::default(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct SubmitClient<C: Chain> {
-    inner: spec::submit::submit_service_client::SubmitServiceClient<InnerService>,
-    _phantom: PhantomData<C>,
-}
+impl_grpc_client!(
+    SubmitClient<C: Chain>,
+    spec::submit::submit_service_client::SubmitServiceClient<InnerService>,
+    spec::submit::submit_service_client::SubmitServiceClient<InnerService>
+);
 
 impl<C: Chain> SubmitClient<C> {
     pub async fn submit_tx<B: Into<NativeBytes>>(
@@ -487,155 +557,98 @@ impl<C: Chain> SubmitClient<C> {
         let res = self.inner.wait_for_tx(req).await?;
         Ok(TxEventStream(res.into_inner()))
     }
-}
 
-impl<C: Chain> Deref for SubmitClient<C> {
-    type Target = spec::submit::submit_service_client::SubmitServiceClient<InnerService>;
+    pub async fn watch_mempool(
+        &mut self,
+        predicate: Option<spec::submit::TxPredicate>,
+    ) -> Result<MempoolStream> {
+        let req = spec::submit::WatchMempoolRequest { 
+            predicate,
+            field_mask: None,
+        };
 
-    fn deref(&self) -> &Self::Target {
-        &self.inner
+        let res = self.inner.watch_mempool(req).await?;
+        Ok(MempoolStream(res.into_inner()))
     }
 }
 
-impl<C: Chain> DerefMut for SubmitClient<C> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
+impl_grpc_client!(
+    WatchClient<C: Chain>,
+    spec::watch::watch_service_client::WatchServiceClient<InnerService>,
+    spec::watch::watch_service_client::WatchServiceClient<InnerService>
+);
+
+#[derive(Debug, Clone)]
+pub enum WatchedTx<C>
+where
+    C: Chain,
+{
+    Apply {
+        tx: ChainTx<C::ParsedTx>,
+        block: ChainBlock<C::ParsedBlock>,
+    },
+    Undo {
+        tx: ChainTx<C::ParsedTx>,
+        block: ChainBlock<C::ParsedBlock>,
+    },
 }
 
-impl<C: Chain> From<InnerService> for SubmitClient<C> {
-    fn from(value: InnerService) -> Self {
-        Self {
-            inner: spec::submit::submit_service_client::SubmitServiceClient::new(value)
-                // we need to relax this limit because there are blocks edge-case blocks that, when including resolved inputs, don't fit in gRPC defaults.
-                .max_decoding_message_size(usize::MAX),
-            _phantom: Default::default(),
+pub struct WatchedTxStream<C: Chain>(Streaming<spec::watch::WatchTxResponse>, PhantomData<C>);
+
+impl<C: Chain> WatchedTxStream<C> {
+    pub async fn event(&mut self) -> Result<Option<WatchedTx<C>>> {
+        match self.0.message().await? {
+            Some(res) => match res.action {
+                Some(spec::watch::watch_tx_response::Action::Apply(tx)) => {
+                    let chain_tx = chain_tx_from_any::<C>(tx);
+                    Ok(Some(WatchedTx::Apply {
+                        tx: chain_tx.0,
+                        block: chain_tx.1,
+                    }))
+                }
+                Some(spec::watch::watch_tx_response::Action::Undo(tx)) => {
+                    let chain_tx = chain_tx_from_any::<C>(tx);
+                    Ok(Some(WatchedTx::Undo {
+                        tx: chain_tx.0,
+                        block: chain_tx.1,
+                    }))
+                }
+                None => Ok(None),
+            },
+            None => Ok(None),
         }
+    }
+}
+
+fn chain_tx_from_any<C: Chain>(
+    any_tx: spec::watch::AnyChainTx,
+) -> (ChainTx<C::ParsedTx>, ChainBlock<C::ParsedBlock>) {
+    let chain_tx = C::tx_from_any_chain(any_tx);
+    let chain_block = ChainBlock {
+        parsed: None,
+        native: Default::default(),
+    };
+    (chain_tx, chain_block)
+}
+
+impl<C: Chain> WatchClient<C> {
+    pub async fn watch_tx(
+        &mut self,
+        predicate: spec::watch::TxPredicate,
+        intersect: Vec<spec::watch::BlockRef>,
+    ) -> Result<WatchedTxStream<C>> {
+        let req = spec::watch::WatchTxRequest {
+            predicate: Some(predicate),
+            field_mask: None,
+            intersect: intersect,
+        };
+
+        let res = self.inner.watch_tx(req).await?;
+        Ok(WatchedTxStream(res.into_inner(), PhantomData))
     }
 }
 
 pub type CardanoSyncClient = SyncClient<Cardano>;
 pub type CardanoQueryClient = QueryClient<Cardano>;
 pub type CardanoSubmitClient = SubmitClient<Cardano>;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_client_build() {
-        ClientBuilder::new()
-            .uri("https://mainnet.utxorpc-v0.demeter.run")
-            .unwrap()
-            .metadata(
-                "dmtr-api-key",
-                "dmtr_utxorpc1wgnnj0qcfj32zxsz2uc8d4g7uclm2s2w",
-            )
-            .unwrap()
-            .build::<CardanoSyncClient>()
-            .await;
-    }
-
-    #[tokio::test]
-    async fn test_follow_tip() {
-        let mut client = ClientBuilder::new()
-            .uri("https://mainnet.utxorpc-v0.demeter.run")
-            .unwrap()
-            .metadata(
-                "dmtr-api-key",
-                "dmtr_utxorpc1wgnnj0qcfj32zxsz2uc8d4g7uclm2s2w",
-            )
-            .unwrap()
-            .build::<CardanoSyncClient>()
-            .await;
-
-        let mut tip = client.follow_tip(vec![]).await.unwrap();
-
-        for _ in 0..10 {
-            let evt = tip.event().await.unwrap().unwrap();
-            match evt {
-                TipEvent::Apply(b) => {
-                    dbg!(&b.parsed);
-                    dbg!(hex::encode(&b.native));
-                }
-                _ => println!("other event"),
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn test_read_tip() {
-        let mut client = ClientBuilder::new()
-            .uri("https://mainnet.utxorpc-v0.demeter.run")
-            .unwrap()
-            .metadata(
-                "dmtr-api-key",
-                "dmtr_utxorpc1wgnnj0qcfj32zxsz2uc8d4g7uclm2s2w",
-            )
-            .unwrap()
-            .build::<CardanoSyncClient>()
-            .await;
-
-        let tip = client.read_tip().await.unwrap().unwrap();
-
-        dbg!(&tip);
-    }
-
-    #[tokio::test]
-    async fn test_read_utxo() {
-        let mut client = ClientBuilder::new()
-            .uri("https://mainnet.utxorpc-v0.demeter.run")
-            .unwrap()
-            .metadata(
-                "dmtr-api-key",
-                "dmtr_utxorpc1wgnnj0qcfj32zxsz2uc8d4g7uclm2s2w",
-            )
-            .unwrap()
-            .build::<CardanoQueryClient>()
-            .await;
-
-        let refs = vec![spec::query::TxoRef {
-            hash: hex::decode("283a0bae03ded3903a9e62d4001849f047ac73fe5ff7291e1cd8753a0017b6dd")
-                .unwrap()
-                .into(),
-            index: 1,
-        }];
-
-        let utxos = client.read_utxos(refs).await.unwrap();
-
-        for utxo in utxos {
-            dbg!(utxo);
-        }
-    }
-
-    #[tokio::test]
-    async fn test_match_utxos() {
-        let mut client = ClientBuilder::new()
-            .uri("https://mainnet.utxorpc-v0.demeter.run")
-            .unwrap()
-            .metadata(
-                "dmtr-api-key",
-                "dmtr_utxorpc1wgnnj0qcfj32zxsz2uc8d4g7uclm2s2w",
-            )
-            .unwrap()
-            .build::<CardanoQueryClient>()
-            .await;
-
-        let pattern = spec::cardano::TxOutputPattern {
-            address: Some(spec::cardano::AddressPattern {
-                exact_address: hex::decode(
-                    "d869626262626262626262626262626262626262626262626262626262626262",
-                )
-                .unwrap()
-                .into(),
-                payment_part: Default::default(),
-                delegation_part: Default::default(),
-            }),
-            asset: None,
-        };
-
-        let utxos = client.match_utxos(pattern, None, 100).await.unwrap();
-
-        dbg!(&utxos);
-    }
-}
+pub type CardanoWatchClient = WatchClient<Cardano>;
