@@ -165,6 +165,7 @@ pub trait Chain {
 
     fn block_from_any_chain(x: spec::sync::AnyChainBlock) -> ChainBlock<Self::ParsedBlock>;
     fn tx_from_any_chain(x: spec::watch::AnyChainTx) -> ChainTx<Self::ParsedTx>;
+    fn query_tx_from_any_chain(x: spec::query::AnyChainTx) -> ChainTx<Self::ParsedTx>;
     fn utxo_from_any_chain(x: spec::query::AnyUtxoData) -> ChainUtxo<Self::ParsedUtxo>;
     fn pattern_into_any_chain(x: Self::UtxoPattern) -> spec::query::AnyUtxoPattern;
 }
@@ -218,6 +219,16 @@ impl Chain for Cardano {
         ChainTx {
             parsed: match x.chain {
                 Some(spec::watch::any_chain_tx::Chain::Cardano(tx)) => Some(tx),
+                _ => None,
+            },
+            native: Default::default(),
+        }
+    }
+
+    fn query_tx_from_any_chain(x: spec::query::AnyChainTx) -> ChainTx<Self::ParsedTx> {
+        ChainTx {
+            parsed: match x.chain {
+                Some(spec::query::any_chain_tx::Chain::Cardano(tx)) => Some(tx),
                 _ => None,
             },
             native: Default::default(),
@@ -519,6 +530,26 @@ impl<C: Chain> QueryClient<C> {
         };
 
         self.search_utxos(predicate, start_token, max_items).await
+    }
+
+    pub async fn read_tx(
+        &mut self,
+        hash: NativeBytes,
+    ) -> Result<Option<ChainTx<C::ParsedTx>>> {
+        let req = spec::query::ReadTxRequest {
+            hash: hash,
+            field_mask: None,
+        };
+
+        let res = self.inner.read_tx(req).await?;
+        let tx_response = res.into_inner();
+
+        if let Some(any_tx) = tx_response.tx {
+            let tx = C::query_tx_from_any_chain(any_tx);
+            Ok(Some(tx))
+        } else {
+            Ok(None)
+        }
     }
 }
 
