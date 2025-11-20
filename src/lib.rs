@@ -15,7 +15,7 @@ use tonic::{
 pub use spec::submit::Stage;
 pub use utxorpc_spec::utxorpc::v1alpha as spec;
 
-use utxorpc_spec::utxorpc::v1alpha::sync::DumpHistoryResponse;
+use utxorpc_spec::utxorpc::v1alpha::{query::ChainPoint, sync::DumpHistoryResponse};
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -147,8 +147,7 @@ macro_rules! impl_grpc_client {
         impl<$chain: Chain> From<InnerService> for $client_name<$chain> {
             fn from(value: InnerService) -> Self {
                 Self {
-                    inner: <$client_type>::new(value)
-                        .max_decoding_message_size(usize::MAX),
+                    inner: <$client_type>::new(value).max_decoding_message_size(usize::MAX),
                     _phantom: Default::default(),
                 }
             }
@@ -180,6 +179,7 @@ pub struct ChainBlock<B> {
 pub struct ChainTx<B> {
     pub parsed: Option<B>,
     pub native: NativeBytes,
+    pub block_ref: Option<ChainPoint>,
 }
 
 #[derive(Debug, Clone)]
@@ -221,6 +221,7 @@ impl Chain for Cardano {
                 Some(spec::watch::any_chain_tx::Chain::Cardano(tx)) => Some(tx),
                 _ => None,
             },
+            block_ref: None,
             native: Default::default(),
         }
     }
@@ -231,6 +232,7 @@ impl Chain for Cardano {
                 Some(spec::query::any_chain_tx::Chain::Cardano(tx)) => Some(tx),
                 _ => None,
             },
+            block_ref: x.block_ref,
             native: Default::default(),
         }
     }
@@ -435,9 +437,7 @@ impl_grpc_client!(
 
 impl<C: Chain> QueryClient<C> {
     pub async fn read_params(&mut self) -> Result<spec::query::AnyChainParams> {
-        let req = spec::query::ReadParamsRequest {
-            field_mask: None,
-        };
+        let req = spec::query::ReadParamsRequest { field_mask: None };
 
         let res = self.inner.read_params(req).await?;
         let params_response = res.into_inner();
@@ -450,9 +450,7 @@ impl<C: Chain> QueryClient<C> {
     /// Read the genesis configuration of the blockchain.
     /// Returns the raw genesis data as bytes.
     pub async fn read_genesis(&mut self) -> Result<NativeBytes> {
-        let req = spec::query::ReadGenesisRequest {
-            field_mask: None,
-        };
+        let req = spec::query::ReadGenesisRequest { field_mask: None };
 
         let res = self.inner.read_genesis(req).await?;
         let genesis_response = res.into_inner();
@@ -462,10 +460,10 @@ impl<C: Chain> QueryClient<C> {
 
     /// Read a summary of the blockchain eras.
     /// Returns information about different eras in the blockchain's history.
-    pub async fn read_era_summary(&mut self) -> Result<spec::query::read_era_summary_response::Summary> {
-        let req = spec::query::ReadEraSummaryRequest {
-            field_mask: None,
-        };
+    pub async fn read_era_summary(
+        &mut self,
+    ) -> Result<spec::query::read_era_summary_response::Summary> {
+        let req = spec::query::ReadEraSummaryRequest { field_mask: None };
 
         let res = self.inner.read_era_summary(req).await?;
         let era_response = res.into_inner();
@@ -532,10 +530,7 @@ impl<C: Chain> QueryClient<C> {
         self.search_utxos(predicate, start_token, max_items).await
     }
 
-    pub async fn read_tx(
-        &mut self,
-        hash: NativeBytes,
-    ) -> Result<Option<ChainTx<C::ParsedTx>>> {
+    pub async fn read_tx(&mut self, hash: NativeBytes) -> Result<Option<ChainTx<C::ParsedTx>>> {
         let req = spec::query::ReadTxRequest {
             hash: hash,
             field_mask: None,
@@ -593,7 +588,7 @@ impl<C: Chain> SubmitClient<C> {
         &mut self,
         predicate: Option<spec::submit::TxPredicate>,
     ) -> Result<MempoolStream> {
-        let req = spec::submit::WatchMempoolRequest { 
+        let req = spec::submit::WatchMempoolRequest {
             predicate,
             field_mask: None,
         };
