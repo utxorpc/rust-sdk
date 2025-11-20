@@ -2,11 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.12.0] - 2025-11-20
+
+### 🚀 Features
+
+- Implement utxorpc remaining endpoints for v0.17 spec (#28)
+- Add read tx query (#30)
+
+### 🚜 Refactor
+
+- Expose block ref in tx api (#31)
+
+### ⚙️ Miscellaneous Tasks
+
+- Update spec to v0.17 (#29)
+
 ## [0.11.0] - 2025-05-23
 
 ### 🐛 Bug Fixes
 
 - Avoid infinite loop when the stream is closed (#25)
+
+### ⚙️ Miscellaneous Tasks
+
+- Release utxorpc version 0.11.0
 
 ## [0.10.0] - 2024-12-29
 

@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "utxorpc"
-version = "0.11.0"
+version = "0.12.0"
 edition = "2021"
 description = "UTxO RPC SDK"
 repository = "https://github.com/utxorpc/rust-sdk"
