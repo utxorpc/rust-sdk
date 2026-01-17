@@ -129,14 +129,17 @@ pub async fn fetch_utxos_from_utxorpc(
             let tx_hash = hex::encode(&tx_ref.hash);
             let output_index = tx_ref.index;
             
-            let lovelace_amount = parsed.coin;
+            let lovelace_amount = parsed.coin.and_then(unwrap_bigint).unwrap_or_default();
             
             let mut assets = Vec::new();
             for asset_group in parsed.assets {
                 let policy_id = hex::encode(&asset_group.policy_id);
                 for asset in asset_group.assets {
                     let asset_name = hex::encode(&asset.name);
-                    let asset_amount = asset.output_coin;
+                    let asset_amount = match asset.quantity {
+                        Some(spec::cardano::asset::Quantity::OutputCoin(int)) => unwrap_bigint(int).unwrap_or_default(),
+                        _ => 0,
+                    };
                     assets.push((policy_id.clone(), asset_name, asset_amount));
                 }
             }
@@ -417,4 +420,11 @@ pub async fn build_transaction(
         asset_name,
         asset_amount,
     ).await
+}
+
+fn unwrap_bigint(value: spec::cardano::BigInt) -> Option<u64> {
+    match value.big_int {
+        Some(spec::cardano::big_int::BigInt::Int(inner)) => Some(inner as u64),
+        _ => None
+    }
 }

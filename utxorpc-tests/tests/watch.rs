@@ -51,6 +51,7 @@ async fn watch_for_tx(
                         }
                     }
                     WatchedTx::Undo { .. } => {}
+                    WatchedTx::Idle { .. } => {}
                 }
             }
             None
@@ -149,10 +150,8 @@ async fn watch_tx_all_patterns() {
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
     // Submit transaction
-    let submitted_tx_id = match submit_client.submit_tx(vec![tx_bytes]).await {
-        Ok(refs) => refs.first()
-            .map(|tx_ref| hex::encode(tx_ref))
-            .expect("No transaction ref returned from submit"),
+    let submitted_tx_id = match submit_client.submit_tx(tx_bytes).await {
+        Ok(tx_ref) => hex::encode(tx_ref),
         Err(_) => {
             eprintln!("Transaction submission failed - skipping test");
             return;
