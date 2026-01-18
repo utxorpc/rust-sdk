@@ -34,16 +34,12 @@ async fn submit_and_wait_for_tx() {
         }
     };
     
-    let refs = match submit_client.submit_tx(vec![tx_bytes]).await {
-        Ok(refs) => refs,
-        Err(_) => {
-            eprintln!("Transaction submission failed - skipping test");
-            return;
-        }
+    let Ok(tx_ref) = submit_client.submit_tx(tx_bytes).await else {
+        eprintln!("Transaction submission failed - skipping test");
+        return;
     };
-    assert!(!refs.is_empty());
     
-    let mut stream = submit_client.wait_for_tx(refs).await.unwrap();
+    let mut stream = submit_client.wait_for_tx(vec![tx_ref]).await.unwrap();
     
     match tokio::time::timeout(
         std::time::Duration::from_secs(5),
@@ -180,10 +176,8 @@ async fn watch_mempool_all_patterns() {
         }
     };
 
-    let submitted_tx_id = match submit_client.submit_tx(vec![tx_bytes]).await {
-        Ok(refs) => refs.first()
-            .map(|tx_ref| hex::encode(tx_ref))
-            .expect("No transaction ref returned from submit"),
+    let submitted_tx_id = match submit_client.submit_tx(tx_bytes).await {
+        Ok(tx_ref) => hex::encode(tx_ref),
         Err(_) => {
             eprintln!("Transaction submission failed - skipping test");
             return;

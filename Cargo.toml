@@ -16,10 +16,10 @@ authors = ["Santiago Carmuega <santiago@carmuega.me>"]
 
 [dependencies]
 bytes = "1.10.1"
-thiserror = "2.0.12"
+thiserror = "2.0.17"
 tokio = "1.46.1"
 tonic = { version = "0.12.3", features = ["tls-roots"] }
-utxorpc-spec = { version = "0.17.0" }
+utxorpc-spec = { version = "0.18.1" }
 # utxorpc-spec = { path = "../spec/gen/rust" }
 
 [dev-dependencies]
