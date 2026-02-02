@@ -555,22 +555,16 @@ impl_grpc_client!(
 );
 
 impl<C: Chain> SubmitClient<C> {
-    pub async fn submit_tx<B: Into<NativeBytes>>(
-        &mut self,
-        txs: Vec<B>,
-    ) -> Result<Vec<NativeBytes>> {
-        let tx = txs
-            .into_iter()
-            .map(|bytes| spec::submit::AnyChainTx {
-                r#type: Some(spec::submit::any_chain_tx::Type::Raw(bytes.into())),
-            })
-            .collect();
+    pub async fn submit_tx<B: Into<NativeBytes>>(&mut self, tx: B) -> Result<NativeBytes> {
+        let tx = Some(spec::submit::AnyChainTx {
+            r#type: Some(spec::submit::any_chain_tx::Type::Raw(tx.into())),
+        });
 
         let req = spec::submit::SubmitTxRequest { tx };
 
         let res = self.inner.submit_tx(req).await?;
-        let refs = res.into_inner().r#ref;
-        Ok(refs)
+        let r#ref = res.into_inner().r#ref;
+        Ok(r#ref)
     }
 
     pub async fn wait_for_tx<B: Into<NativeBytes>>(
@@ -639,6 +633,7 @@ impl<C: Chain> WatchedTxStream<C> {
                         block: chain_tx.1,
                     }))
                 }
+                Some(spec::watch::watch_tx_response::Action::Idle(_)) => Ok(None),
                 None => Ok(None),
             },
             None => Ok(None),

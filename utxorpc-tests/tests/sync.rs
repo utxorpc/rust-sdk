@@ -1,6 +1,6 @@
 mod common;
 
-use utxorpc::{*, spec};
+use utxorpc::{spec, *};
 
 #[tokio::test]
 async fn client_build() {
@@ -89,7 +89,7 @@ async fn fetch_block() {
     let blocks = client.fetch_block(vec![block_ref]).await.unwrap();
 
     assert_eq!(blocks.len(), 1, "Should fetch exactly one block");
-    
+
     if let Some(parsed) = &blocks[0].parsed {
         if let Some(header) = &parsed.header {
             assert_eq!(header.slot, 85213090);
@@ -117,7 +117,7 @@ async fn dump_history() {
     let history = client.dump_history(Some(start_ref), 1).await.unwrap();
 
     assert!(!history.items.is_empty(), "Should have at least one block");
-    
+
     let first_block = &history.items[0];
     if let Some(parsed) = &first_block.parsed {
         if let Some(header) = &parsed.header {

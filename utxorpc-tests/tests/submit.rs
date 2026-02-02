@@ -1,7 +1,7 @@
 mod common;
 
 use common::*;
-use utxorpc::{*, spec};
+use utxorpc::{spec, *};
 
 const TEST_CLIENT_URI: &str = "http://localhost:50051";
 
@@ -21,34 +21,33 @@ async fn submit_and_wait_for_tx() {
     let tx_bytes = match build_transaction(
         TEST_ADDRESS,
         TEST_ADDRESS,
-        1_000_000,  // Reduced from 2M to leave enough for change
+        1_000_000, // Reduced from 2M to leave enough for change
         TEST_MNEMONIC,
         None,
         None,
         None,
-    ).await {
+    )
+    .await
+    {
         Ok(bytes) => bytes,
         Err(_) => {
             eprintln!("Failed to build transaction - skipping test");
             return;
         }
     };
-    
-    let refs = match submit_client.submit_tx(vec![tx_bytes]).await {
-        Ok(refs) => refs,
+
+    let tx_ref = match submit_client.submit_tx(tx_bytes).await {
+        Ok(r) => r,
         Err(_) => {
             eprintln!("Transaction submission failed - skipping test");
             return;
         }
     };
-    assert!(!refs.is_empty());
-    
-    let mut stream = submit_client.wait_for_tx(refs).await.unwrap();
-    
-    match tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        stream.event()
-    ).await {
+    assert!(!tx_ref.is_empty());
+
+    let mut stream = submit_client.wait_for_tx(vec![tx_ref]).await.unwrap();
+
+    match tokio::time::timeout(std::time::Duration::from_secs(5), stream.event()).await {
         Ok(Ok(Some(event))) => {
             assert!(!event.r#ref.is_empty());
         }
@@ -69,21 +68,21 @@ async fn watch_for_mempool_tx(
     timeout_secs: u64,
     expected_tx_id: &str,
 ) -> Option<String> {
-    tokio::time::timeout(
-        std::time::Duration::from_secs(timeout_secs),
-        async {
-            while let Ok(Some(tx)) = stream.tx().await {
-                let tx_id = hex::encode(&tx.r#ref);
-                assert!(!tx.native_bytes.is_empty());
-                assert!(tx.stage >= 1);
-                
-                if tx_id == expected_tx_id {
-                    return Some(tx_id);
-                }
+    tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), async {
+        while let Ok(Some(tx)) = stream.tx().await {
+            let tx_id = hex::encode(&tx.r#ref);
+            assert!(!tx.native_bytes.is_empty());
+            assert!(tx.stage >= 1);
+
+            if tx_id == expected_tx_id {
+                return Some(tx_id);
             }
-            None
         }
-    ).await.ok().flatten()
+        None
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 fn create_tx_predicate(pattern: spec::cardano::TxPattern) -> spec::submit::TxPredicate {
@@ -105,59 +104,79 @@ async fn watch_mempool_all_patterns() {
     let payment_key_hash = get_payment_key_hash_from_mnemonic(TEST_MNEMONIC).unwrap();
     let stake_key_hash = get_stake_key_hash_from_mnemonic(TEST_MNEMONIC).unwrap();
     let test_address_bytes = hex::decode(TEST_ADDRESS_HEX).unwrap();
-    
+
     const POLICY_ID_HEX: &str = "8b05e87a51c1d4a0fa888d2bb14dbc25e8c343ea379a171b63aa84a0";
     const ASSET_NAME_HEX: &str = "434e4354";
-    
+
     let subject = format!("{}{}", POLICY_ID_HEX, ASSET_NAME_HEX);
     let subject_bytes = hex::decode(&subject).unwrap();
 
     // Create predicates for different patterns
     let predicates = [
-        ("address", create_tx_predicate(spec::cardano::TxPattern {
-            has_address: Some(spec::cardano::AddressPattern {
-                exact_address: test_address_bytes.into(),
-                payment_part: Default::default(),
-                delegation_part: Default::default(),
+        (
+            "address",
+            create_tx_predicate(spec::cardano::TxPattern {
+                has_address: Some(spec::cardano::AddressPattern {
+                    exact_address: test_address_bytes.into(),
+                    payment_part: Default::default(),
+                    delegation_part: Default::default(),
+                }),
+                ..Default::default()
             }),
-            ..Default::default()
-        })),
-        ("payment", create_tx_predicate(spec::cardano::TxPattern {
-            has_address: Some(spec::cardano::AddressPattern {
-                exact_address: Default::default(),
-                payment_part: payment_key_hash.into(),
-                delegation_part: Default::default(),
+        ),
+        (
+            "payment",
+            create_tx_predicate(spec::cardano::TxPattern {
+                has_address: Some(spec::cardano::AddressPattern {
+                    exact_address: Default::default(),
+                    payment_part: payment_key_hash.into(),
+                    delegation_part: Default::default(),
+                }),
+                ..Default::default()
             }),
-            ..Default::default()
-        })),
-        ("delegation", create_tx_predicate(spec::cardano::TxPattern {
-            has_address: Some(spec::cardano::AddressPattern {
-                exact_address: Default::default(),
-                payment_part: Default::default(),
-                delegation_part: stake_key_hash.into(),
+        ),
+        (
+            "delegation",
+            create_tx_predicate(spec::cardano::TxPattern {
+                has_address: Some(spec::cardano::AddressPattern {
+                    exact_address: Default::default(),
+                    payment_part: Default::default(),
+                    delegation_part: stake_key_hash.into(),
+                }),
+                ..Default::default()
             }),
-            ..Default::default()
-        })),
-        ("asset", create_tx_predicate(spec::cardano::TxPattern {
-            moves_asset: Some(spec::cardano::AssetPattern {
-                policy_id: Default::default(),
-                asset_name: subject_bytes.into(),
+        ),
+        (
+            "asset",
+            create_tx_predicate(spec::cardano::TxPattern {
+                moves_asset: Some(spec::cardano::AssetPattern {
+                    policy_id: Default::default(),
+                    asset_name: subject_bytes.into(),
+                }),
+                ..Default::default()
             }),
-            ..Default::default()
-        })),
-        ("policy", create_tx_predicate(spec::cardano::TxPattern {
-            moves_asset: Some(spec::cardano::AssetPattern {
-                policy_id: hex::decode(POLICY_ID_HEX).unwrap().into(),
-                asset_name: Default::default(),
+        ),
+        (
+            "policy",
+            create_tx_predicate(spec::cardano::TxPattern {
+                moves_asset: Some(spec::cardano::AssetPattern {
+                    policy_id: hex::decode(POLICY_ID_HEX).unwrap().into(),
+                    asset_name: Default::default(),
+                }),
+                ..Default::default()
             }),
-            ..Default::default()
-        })),
+        ),
     ];
 
     // Start watching with all predicates
     let mut streams = Vec::new();
     for (_, predicate) in &predicates {
-        streams.push(submit_client.watch_mempool(Some(predicate.clone())).await.unwrap());
+        streams.push(
+            submit_client
+                .watch_mempool(Some(predicate.clone()))
+                .await
+                .unwrap(),
+        );
     }
 
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -167,12 +186,14 @@ async fn watch_mempool_all_patterns() {
     let tx_bytes = match build_transaction(
         TEST_ADDRESS,
         TEST_ADDRESS,
-        1_000_000,  // Reduced from 2M to leave enough for change
+        1_000_000, // Reduced from 2M to leave enough for change
         TEST_MNEMONIC,
         None, // No asset for initial test
         None,
         None,
-    ).await {
+    )
+    .await
+    {
         Ok(bytes) => bytes,
         Err(_) => {
             eprintln!("Failed to build transaction - skipping test");
@@ -180,10 +201,8 @@ async fn watch_mempool_all_patterns() {
         }
     };
 
-    let submitted_tx_id = match submit_client.submit_tx(vec![tx_bytes]).await {
-        Ok(refs) => refs.first()
-            .map(|tx_ref| hex::encode(tx_ref))
-            .expect("No transaction ref returned from submit"),
+    let submitted_tx_id = match submit_client.submit_tx(tx_bytes).await {
+        Ok(tx_ref) => hex::encode(tx_ref),
         Err(_) => {
             eprintln!("Transaction submission failed - skipping test");
             return;
@@ -204,9 +223,9 @@ async fn watch_mempool_all_patterns() {
             );
             vec![r0, r1, r2, r3, r4]
         }
-        _ => panic!("Expected exactly 5 predicates")
+        _ => panic!("Expected exactly 5 predicates"),
     };
-    
+
     // Verify results
     for ((pattern_name, _), result) in predicates.iter().zip(results.iter()) {
         if let Some(detected_tx_id) = result {
@@ -216,17 +235,21 @@ async fn watch_mempool_all_patterns() {
                 pattern_name
             );
         }
-        
+
         // Only address-based patterns should detect a transaction without assets
         match *pattern_name {
             "address" | "payment" | "delegation" => {
-                assert!(result.is_some(), "{} pattern should have detected the transaction", pattern_name);
+                assert!(
+                    result.is_some(),
+                    "{} pattern should have detected the transaction",
+                    pattern_name
+                );
             }
             "asset" | "policy" => {
                 // Asset patterns won't detect transactions without assets
                 // Note: Some implementations may incorrectly match, so we just skip the assertion
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 }

@@ -1,6 +1,6 @@
 mod common;
 
-use utxorpc::{*, spec};
+use utxorpc::{spec, *};
 
 #[tokio::test]
 async fn read_utxo() {
@@ -84,9 +84,11 @@ async fn match_utxos_by_delegation_part() {
         address: Some(spec::cardano::AddressPattern {
             exact_address: Default::default(),
             payment_part: Default::default(),
-            delegation_part: hex::decode("3b7bb577937983e016d4e8429ff48cf386d6818883f9e88b62a804e0")
-                .unwrap()
-                .into(),
+            delegation_part: hex::decode(
+                "3b7bb577937983e016d4e8429ff48cf386d6818883f9e88b62a804e0",
+            )
+            .unwrap()
+            .into(),
         }),
         asset: None,
     };
@@ -127,9 +129,11 @@ async fn match_utxos_by_asset() {
         .build::<CardanoQueryClient>()
         .await;
 
-    let full_asset = hex::decode("047e0f912c4260fe66ae271e5ae494dcd5f79635bbbb1386be195f4e414c4c45594b41545a3030303630")
-        .unwrap();
-    
+    let full_asset = hex::decode(
+        "047e0f912c4260fe66ae271e5ae494dcd5f79635bbbb1386be195f4e414c4c45594b41545a3030303630",
+    )
+    .unwrap();
+
     let policy_id = full_asset[..28].to_vec();
 
     let pattern = spec::cardano::TxOutputPattern {
