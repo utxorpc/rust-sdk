@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.12.0] - 2025-11-20
+## [0.13.0] - 2026-02-02
 
 ### 🚀 Features
 
@@ -16,6 +16,8 @@ All notable changes to this project will be documented in this file.
 ### ⚙️ Miscellaneous Tasks
 
 - Update spec to v0.17 (#29)
+- Release
+- Bump spec version to v0.18 (#34)
 
 ## [0.11.0] - 2025-05-23
 
