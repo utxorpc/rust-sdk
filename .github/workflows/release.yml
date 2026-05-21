@@ -1,0 +1,43 @@
+name: Release
+
+# Conforms to the umbrella SDK release pipeline contract:
+# u5c-factory reference/sdk-pipeline-requirements.md
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Build only the SDK crate; utxorpc-tests is excluded (see ci.yml).
+      - run: cargo build -p utxorpc --all-targets
+
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p utxorpc
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Set crate version from tag
+        run: sed -i -E 's/^version = .*/version = "'"${GITHUB_REF_NAME#v}"'"/' Cargo.toml
+
+      - name: Publish to crates.io
+        env:
+          # --allow-dirty: the version edit above leaves Cargo.toml modified in-tree.
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p utxorpc --allow-dirty
