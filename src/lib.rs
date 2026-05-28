@@ -221,7 +221,17 @@ impl Chain for Cardano {
                 Some(spec::watch::any_chain_tx::Chain::Cardano(tx)) => Some(tx),
                 _ => None,
             },
-            block_ref: None,
+            block_ref: match x.block.and_then(|b| b.chain) {
+                Some(spec::watch::any_chain_block::Chain::Cardano(block)) => {
+                    block.header.map(|header| spec::query::ChainPoint {
+                        timestamp: block.timestamp,
+                        height: header.height,
+                        hash: header.hash,
+                        slot: header.slot,
+                    })
+                }
+                _ => None,
+            },
             native: Default::default(),
         }
     }
