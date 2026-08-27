@@ -50,3 +50,18 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish -p utxorpc
+
+  # Publishing the package and announcing it are separate concerns: this job is
+  # kept apart from `publish` so the credential-bearing job keeps `contents: read`.
+  release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          # A SemVer pre-release suffix is the only place a hyphen appears in the tag.
+          prerelease: ${{ contains(github.ref_name, '-') }}
