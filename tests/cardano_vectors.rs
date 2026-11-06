@@ -1,4 +1,4 @@
-//! Decodes the protocol vectors with the spec's generated types.
+//! Decodes the Cardano vectors with the spec's generated types.
 
 use prost::Message;
 use std::fs;
@@ -14,7 +14,7 @@ struct Vector {
 }
 
 fn vectors_dir() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/protocol-vectors")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/cardano")
 }
 
 fn vectors() -> Vec<Vector> {
@@ -68,5 +68,5 @@ macro_rules! check_version {
     };
 }
 
-check_version!(decodes_v1alpha_vectors, v1alpha);
-check_version!(decodes_v1beta_vectors, v1beta);
+check_version!(decodes_v1alpha, v1alpha);
+check_version!(decodes_v1beta, v1beta);
