@@ -24,6 +24,7 @@ utxorpc-spec = { version = "0.19.0" }
 
 [dev-dependencies]
 hex = "0.4"
+prost = "0.13"
 tokio = { version = "1.46.1", features = ["full"] }
 
 [workspace.metadata.release]
