@@ -60,7 +60,7 @@ jobs:
       contents: write
     steps:
       - name: GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           # A SemVer pre-release suffix is the only place a hyphen appears in the tag.
